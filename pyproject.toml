@@ -9,3 +9,9 @@ dependencies = [
     "pydantic>=2.12.5",
     "uvicorn>=0.44.0",
 ]
+
+[tool.pyright]
+# 1. Virtual Environment Mapping
+# This tells Neovim exactly where to find 'pytest' and other dev tools
+venvPath = "."
+venv = ".venv"
