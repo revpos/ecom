@@ -1,0 +1,11 @@
+[project]
+name = "ecom"
+version = "0.1.0"
+description = "This is an eCommerce project, from prototype to production-level standards"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "fastapi>=0.135.3",
+    "pydantic>=2.12.5",
+    "uvicorn>=0.44.0",
+]
