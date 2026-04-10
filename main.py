@@ -1,8 +1,17 @@
-from fastapi import FastAPI, Depends
+import uuid
 
-from app.user import UserCreate, UserRead, get_user_service
+from fastapi import FastAPI, Request
+
+from user_site.infrastructure.logging import setup_logging, request_id_ctx_var
+
+from user_site.api.v1.user_routes import user_router
+
+
+setup_logging()
 
 app = FastAPI(title="rev-store")
+
+app.include_router(user_router)
 
 
 @app.get("/")
@@ -14,13 +23,18 @@ def root():
 def health_check():
     return {"status": "healthy"}
 
-
-@app.post("/users/", response_model=UserCreate)
-def create_user(user: UserCreate, service=Depends(get_user_service)):
-    new_user = service.create_user(email=user.email, password=user.password)
-    return new_user
-
-
-@app.get("/users", response_model=list[UserRead])
-def get_users(service=Depends(get_user_service)):
-    return service.get_users()
+@app.middleware("http")
+async def log_request_id(request: Request, call_next):
+    # 1. Generate or grab ID from headers
+    req_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
+    
+    # 2. Set the context variable
+    token = request_id_ctx_var.set(req_id)
+    
+    try:
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = req_id
+        return response
+    finally:
+        # 3. Clean up
+        request_id_ctx_var.reset(token)

@@ -1,0 +1,126 @@
+from datetime import datetime
+from fastapi import Depends
+from sqlalchemy.orm import Session
+
+from .db import UserSQL, get_db_session
+from .errors import (
+    raise_user_not_found,
+    raise_invalid_email,
+    raise_email_already_registered,
+    raise_invalid_password,
+    raise_user_already_inactive
+)
+from .schemas import (
+    UserCreateResponse as UserCreate,
+    UserPublicResponse as UserPublic,
+    UserPasswordUpdateResponse,
+    UserDeleteResponse as UserDelete,
+)
+from .utils import get_datetime_utc, hash_password
+
+# global helper function to convert UserSQL to UserPublic
+def _to_public(user_sql: UserSQL) -> UserPublic:
+    return UserPublic(
+        user_id=user_sql.user_id,
+        email=user_sql.email_address,
+        full_name=user_sql.full_name,
+        is_active=user_sql.is_active,
+        created_at=user_sql.created_at,
+        updated_at=user_sql.updated_at,
+    )
+
+
+class UserService:
+    def __init__(self, session: Session):
+        self._db = session
+
+    def _get_by_id(self, user_id: int) -> UserSQL | None:
+        return self._db.query(UserSQL).filter(UserSQL.user_id == user_id).first()
+
+    def _get_by_email(self, email: str) -> UserSQL | None:
+        return self._db.query(UserSQL).filter(UserSQL.email_address == email).first()
+
+    def list_users(self) -> list[UserPublic]:
+        return [_to_public(u) for u in self._db.query(UserSQL).all()]
+
+    def get_user(self, user_id: int | None = None, email: str | None = None) -> UserPublic | None:
+        user_sql = (
+            self._get_by_id(user_id) if user_id is not None
+            else self._get_by_email(email) if email is not None
+            else None
+        )
+
+        return _to_public(user_sql) if user_sql else None
+
+    def register_user(self, email: str, password: str, full_name: str | None = None) -> UserCreate:
+        if self._get_by_email(email):
+            raise_email_already_registered(email)
+
+        if not email or "@" not in email:
+            raise_invalid_email(email)
+
+        if not password:
+            raise_invalid_password()
+
+        user_sql = UserSQL(
+            email_address=email,
+            secure_password=hash_password(password),
+            full_name=full_name,
+        )
+        self._db.add(user_sql)
+        self._db.commit()
+        self._db.refresh(user_sql)
+
+        return UserCreate(
+            email=user_sql.email_address,
+            full_name=user_sql.full_name,
+            created_at=user_sql.created_at,
+        )
+
+    def update_user(self, user_id: int, full_name: str) -> UserPublic | None:
+        user_sql = self._get_by_id(user_id)
+        
+        if not user_sql:
+            raise_user_not_found(user_id)
+            return  # This line is unreachable but helps type checkers
+
+        user_sql.full_name = full_name
+        user_sql.updated_at = get_datetime_utc()
+        self._db.commit()
+        self._db.refresh(user_sql)
+
+        return _to_public(user_sql)
+
+    def update_password(self, user_id: int, new_password: str) -> UserPasswordUpdateResponse | None:
+        user_sql = self._get_by_id(user_id)
+        if not user_sql:
+            return None
+
+        user_sql.secure_password = hash_password(new_password)
+        user_sql.updated_at = get_datetime_utc()
+        self._db.commit()
+        self._db.refresh(user_sql)
+
+        return UserPasswordUpdateResponse(
+            email=user_sql.email_address,
+            updated_at=user_sql.updated_at,
+        )
+
+    def delete_user(self, user_id: int) -> UserDelete | None:
+        user_sql = self._get_by_id(user_id)
+        if not user_sql:
+            return None
+        
+        # Soft delete: mark the flag "is_active = False" instead of deleting the record
+        user_sql.is_active = False
+        user_sql.updated_at = get_datetime_utc()
+        self._db.execute
+        self._db.commit()
+
+        return UserDelete(
+            email=user_sql.email_address,
+            deleted_at=get_datetime_utc(),
+        )
+
+def get_user_service(session: Session = Depends(get_db_session)) -> UserService:
+    return UserService(session)

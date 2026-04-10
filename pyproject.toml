@@ -6,9 +6,13 @@ readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "fastapi>=0.135.3",
-    "pydantic>=2.12.5",
+    "pydantic-settings>=2.13.1",
+    "pydantic[email]>=2.12.5",
+    "sqlalchemy>=2.0.49",
     "uvicorn>=0.44.0",
 ]
+
+members = ["user_site", "."]
 
 [tool.pyright]
 # 1. Virtual Environment Mapping
